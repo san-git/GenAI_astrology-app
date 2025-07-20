@@ -166,8 +166,7 @@ class HuggingFaceAstrologyInterpreter:
         self.model_name = "mistralai/Mistral-7B-Instruct-v0.2"  # Free model
         self.api_url = f"https://api-inference.huggingface.co/models/{self.model_name}"
         
-        if not self.api_token:
-            st.info("ℹ️ Using Hugging Face free tier. For better performance, add HUGGINGFACE_API_TOKEN to secrets.")
+        # Note: API token is optional - works with free tier
     
     def create_astrology_prompt(self, kundali_data: Dict, question: str) -> str:
         """Create a detailed prompt for astrology interpretation"""
