@@ -157,14 +157,17 @@ compatibility_matrix = {
     "Pisces": ["Cancer", "Scorpio", "Taurus", "Capricorn"]
 }
 
-class GeminiAstrologyInterpreter:
-    """AI-powered astrology interpreter using Google Gemini Pro"""
+class HuggingFaceAstrologyInterpreter:
+    """AI-powered astrology interpreter using Hugging Face models"""
     
     def __init__(self):
-        # Try to get API key from Streamlit secrets first, then environment variable
-        self.api_key = st.secrets.get("GOOGLE_API_KEY", os.getenv('GOOGLE_API_KEY'))
-        if not self.api_key:
-            st.warning("⚠️ Google API key not found. Set GOOGLE_API_KEY in Streamlit secrets or environment variable for AI features.")
+        # Hugging Face API token (optional for free tier)
+        self.api_token = st.secrets.get("HUGGINGFACE_API_TOKEN", os.getenv('HUGGINGFACE_API_TOKEN'))
+        self.model_name = "mistralai/Mistral-7B-Instruct-v0.2"  # Free model
+        self.api_url = f"https://api-inference.huggingface.co/models/{self.model_name}"
+        
+        if not self.api_token:
+            st.info("ℹ️ Using Hugging Face free tier. For better performance, add HUGGINGFACE_API_TOKEN to secrets.")
     
     def create_astrology_prompt(self, kundali_data: Dict, question: str) -> str:
         """Create a detailed prompt for astrology interpretation"""
@@ -178,8 +181,7 @@ class GeminiAstrologyInterpreter:
             planet_desc = f"{planet} ({vedic_info.get('sanskrit', '')}) in {data['sign']} ({sign_info.get('sanskrit', '')}) in House {data['house']} ({house_info})"
             planets_info.append(planet_desc)
         
-        prompt = f"""
-You are an expert Vedic astrologer with deep knowledge of both Western and Indian astrology. Analyze the following birth chart (Kundali) and provide insightful, personalized interpretations.
+        prompt = f"""<s>[INST] You are an expert Vedic astrologer with deep knowledge of both Western and Indian astrology. Analyze the following birth chart (Kundali) and provide insightful, personalized interpretations.
 
 BIRTH CHART DATA:
 - Ascendant (Lagna): {kundali_data['ascendant']['sign']}
@@ -199,32 +201,53 @@ Please provide a comprehensive, insightful interpretation that:
 5. Includes both strengths and growth opportunities
 6. Relates to real-life situations and experiences
 
-Format your response in a clear, structured way with relevant sections and bullet points where appropriate.
-"""
+Format your response in a clear, structured way with relevant sections and bullet points where appropriate. [/INST]"""
+        
         return prompt
     
     def get_ai_interpretation(self, kundali_data: Dict, question: str) -> str:
-        """Get AI interpretation for astrology question using Gemini Pro"""
-        
-        if not self.api_key:
-            return self.get_fallback_interpretation(kundali_data, question)
+        """Get AI interpretation for astrology question using Hugging Face"""
         
         try:
-            import google.generativeai as genai
-            
-            genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel('gemini-1.5-pro')
+            import requests
+            import json
             
             prompt = self.create_astrology_prompt(kundali_data, question)
-            response = model.generate_content(prompt)
             
-            return response.text
+            headers = {
+                "Content-Type": "application/json"
+            }
             
+            if self.api_token:
+                headers["Authorization"] = f"Bearer {self.api_token}"
+            
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": 1000,
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "do_sample": True
+                }
+            }
+            
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    return result[0].get('generated_text', '').replace(prompt, '').strip()
+                else:
+                    return str(result)
+            else:
+                st.warning(f"⚠️ Hugging Face API error: {response.status_code}")
+                return self.get_fallback_interpretation(kundali_data, question)
+                
         except ImportError:
-            st.error("⚠️ Google Generative AI library not installed.")
+            st.error("⚠️ Requests library not installed. Install with: pip install requests")
             return self.get_fallback_interpretation(kundali_data, question)
         except Exception as e:
-            st.error(f"⚠️ Gemini interpretation error: {e}")
+            st.error(f"⚠️ Hugging Face interpretation error: {e}")
             return self.get_fallback_interpretation(kundali_data, question)
     
     def get_fallback_interpretation(self, kundali_data: Dict, question: str) -> str:
@@ -235,7 +258,7 @@ Format your response in a clear, structured way with relevant sections and bulle
         ascendant = kundali_data['ascendant']['sign']
         
         interpretation = f"""
-🌟 ASTROLOGICAL INTERPRETATION (Gemini Version) 🌟
+🌟 ASTROLOGICAL INTERPRETATION (Hugging Face Version) 🌟
 
 Based on your birth chart analysis:
 
@@ -262,7 +285,7 @@ PLANETARY INFLUENCES:
 • Work with your {moon_sign} emotional patterns
 • Express your {ascendant} qualities authentically
 
-Note: For more detailed AI-powered interpretations with Gemini Pro, set your Google API key.
+Note: For more detailed AI-powered interpretations, the Hugging Face model will provide insights when available.
 """
         
         return interpretation
@@ -511,9 +534,9 @@ def display_kundali_web(kundali_data):
 def gemini_astrology_consultation_web(kundali_data):
     """AI-powered astrology consultation web interface"""
     
-    st.markdown("## 🤖 GenAI ASTROLOGY CONSULTATION")
+    st.markdown("## 🤖 AI ASTROLOGY CONSULTATION")
     
-    interpreter = GeminiAstrologyInterpreter()
+    interpreter = HuggingFaceAstrologyInterpreter()
     
     st.markdown("""
     💭 **You can ask questions like:**
@@ -531,10 +554,10 @@ def gemini_astrology_consultation_web(kundali_data):
     
     if st.button("🔮 Get AI Interpretation", type="primary"):
         if question.strip():
-            with st.spinner("🤖 Generating GenAI interpretation..."):
+            with st.spinner("🤖 Generating AI interpretation..."):
                 interpretation = interpreter.get_ai_interpretation(kundali_data, question)
             
-            st.markdown("## 🌟 GenAI ASTROLOGICAL INTERPRETATION")
+            st.markdown("## 🌟 AI ASTROLOGICAL INTERPRETATION")
             st.markdown(interpretation)
         else:
             st.warning("Please enter a question.")
@@ -784,7 +807,7 @@ def main():
             "💎 Daily Crystal Recommendation",
             "🔮 All-in-One Reading (Complete Profile)",
             "🕉️ Generate Kundali (Birth Chart)",
-            "🤖 GenAI Astrology Consultation (Ask Questions)"
+            "🤖 AI Astrology Consultation (Ask Questions)"
         ]
     )
     
@@ -885,7 +908,7 @@ def main():
             
             display_kundali_web(kundali_data)
             
-    elif option == "🤖 GenAI Astrology Consultation (Ask Questions)":
+    elif option == "🤖 AI Astrology Consultation (Ask Questions)":
         if st.session_state.current_kundali is None:
             st.warning("⚠️ You need to generate your Kundali first (option 5).")
             st.info("Please go to '🕉️ Generate Kundali (Birth Chart)' to create your birth chart first.")
