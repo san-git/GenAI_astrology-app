@@ -161,9 +161,10 @@ class GeminiAstrologyInterpreter:
     """AI-powered astrology interpreter using Google Gemini Pro"""
     
     def __init__(self):
-        self.api_key = os.getenv('GOOGLE_API_KEY')
+        # Try to get API key from Streamlit secrets first, then environment variable
+        self.api_key = st.secrets.get("GOOGLE_API_KEY", os.getenv('GOOGLE_API_KEY'))
         if not self.api_key:
-            st.warning("⚠️ Google API key not found. Set GOOGLE_API_KEY environment variable for AI features.")
+            st.warning("⚠️ Google API key not found. Set GOOGLE_API_KEY in Streamlit secrets or environment variable for AI features.")
     
     def create_astrology_prompt(self, kundali_data: Dict, question: str) -> str:
         """Create a detailed prompt for astrology interpretation"""
