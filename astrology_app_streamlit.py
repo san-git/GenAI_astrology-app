@@ -210,6 +210,7 @@ Format your response in a clear, structured way with relevant sections and bulle
         try:
             import requests
             import json
+            import time
             
             prompt = self.create_astrology_prompt(kundali_data, question)
             
@@ -223,41 +224,67 @@ Format your response in a clear, structured way with relevant sections and bulle
             payload = {
                 "inputs": prompt,
                 "parameters": {
-                    "max_new_tokens": 1000,
+                    "max_new_tokens": 800,  # Reduced to avoid rate limits
                     "temperature": 0.7,
                     "top_p": 0.9,
                     "do_sample": True
                 }
             }
             
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
-            
-            if response.status_code == 200:
-                result = response.json()
-                if isinstance(result, list) and len(result) > 0:
-                    return result[0].get('generated_text', '').replace(prompt, '').strip()
-                else:
-                    return str(result)
-            else:
-                st.warning(f"⚠️ Hugging Face API error: {response.status_code}")
-                return self.get_fallback_interpretation(kundali_data, question)
+            # Try up to 3 times with exponential backoff
+            for attempt in range(3):
+                try:
+                    response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        if isinstance(result, list) and len(result) > 0:
+                            return result[0].get('generated_text', '').replace(prompt, '').strip()
+                        else:
+                            return str(result)
+                    elif response.status_code == 429:
+                        if attempt < 2:  # Don't wait on last attempt
+                            wait_time = (2 ** attempt) * 2  # 2, 4, 8 seconds
+                            st.info(f"🤖 AI is busy, waiting {wait_time} seconds...")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            st.info("🤖 AI service is currently busy. Here's a detailed astrological interpretation based on your chart:")
+                            return self.get_fallback_interpretation(kundali_data, question)
+                    else:
+                        st.info(f"🤖 AI service temporarily unavailable. Here's a detailed astrological interpretation:")
+                        return self.get_fallback_interpretation(kundali_data, question)
+                        
+                except requests.exceptions.Timeout:
+                    if attempt < 2:
+                        st.info("🤖 AI is taking longer than expected, retrying...")
+                        time.sleep(2)
+                        continue
+                    else:
+                        st.info("🤖 AI service is slow. Here's a detailed astrological interpretation:")
+                        return self.get_fallback_interpretation(kundali_data, question)
+                        
+            return self.get_fallback_interpretation(kundali_data, question)
                 
         except ImportError:
             st.error("⚠️ Requests library not installed. Install with: pip install requests")
             return self.get_fallback_interpretation(kundali_data, question)
         except Exception as e:
-            st.error(f"⚠️ Hugging Face interpretation error: {e}")
+            st.info("🤖 AI service temporarily unavailable. Here's a detailed astrological interpretation:")
             return self.get_fallback_interpretation(kundali_data, question)
     
     def get_fallback_interpretation(self, kundali_data: Dict, question: str) -> str:
-        """Provide fallback interpretation without AI"""
+        """Provide detailed fallback interpretation without AI"""
         
         sun_sign = kundali_data['planets']['Sun']['sign']
         moon_sign = kundali_data['planets']['Moon']['sign']
         ascendant = kundali_data['ascendant']['sign']
         
+        # Enhanced interpretation based on the question
+        question_lower = question.lower()
+        
         interpretation = f"""
-🌟 ASTROLOGICAL INTERPRETATION (Hugging Face Version) 🌟
+🌟 DETAILED ASTROLOGICAL INTERPRETATION 🌟
 
 Based on your birth chart analysis:
 
@@ -278,13 +305,65 @@ PLANETARY INFLUENCES:
             house_info = house_significations.get(data['house'], "")
             interpretation += f"• {planet} in {data['sign']} (House {data['house']}): {vedic_info.get('significance', '')} - {house_info}\n"
         
+        # Add specific insights based on question keywords
+        if any(word in question_lower for word in ['career', 'job', 'work', 'profession']):
+            interpretation += f"""
+💼 CAREER INSIGHTS:
+• Your {sun_sign} energy suggests leadership and initiative in professional settings
+• {moon_sign} emotional patterns influence your work relationships
+• {ascendant} qualities help you make strong first impressions in interviews
+• Focus on developing your natural {sun_sign} strengths in your career path
+"""
+        elif any(word in question_lower for word in ['love', 'relationship', 'marriage', 'partner']):
+            interpretation += f"""
+💕 RELATIONSHIP INSIGHTS:
+• Your {moon_sign} emotional nature shapes how you express love and affection
+• {sun_sign} energy influences what you seek in a partner
+• {ascendant} qualities determine how you appear to potential partners
+• Your Venus placement in {kundali_data['planets']['Venus']['sign']} shows your approach to romance
+"""
+        elif any(word in question_lower for word in ['health', 'wellness', 'fitness']):
+            interpretation += f"""
+🏥 HEALTH INSIGHTS:
+• Your {sun_sign} vitality and {moon_sign} emotional balance affect your overall health
+• Pay attention to the house where your Sun is placed (House {kundali_data['planets']['Sun']['house']})
+• Regular exercise that aligns with your {sun_sign} energy will be most beneficial
+• Emotional wellness through {moon_sign} activities will support your health
+"""
+        else:
+            interpretation += f"""
+💡 GENERAL RECOMMENDATIONS:
+• Focus on developing your {sun_sign} strengths and natural talents
+• Work with your {moon_sign} emotional patterns for inner harmony
+• Express your {ascendant} qualities authentically in all areas of life
+• Your planetary positions suggest a balanced approach to personal growth
+"""
+        
         interpretation += f"""
-💡 RECOMMENDATIONS:
-• Focus on developing your {sun_sign} strengths
-• Work with your {moon_sign} emotional patterns
-• Express your {ascendant} qualities authentically
+🔮 SPECIAL COMBINATIONS:
+"""
+        
+        # Check for special planetary combinations
+        sun_house = kundali_data['planets']['Sun']['house']
+        moon_house = kundali_data['planets']['Moon']['house']
+        
+        if sun_house == moon_house:
+            interpretation += "• Sun-Moon Conjunction: Strong willpower and determination\n"
+        
+        if kundali_data['planets']['Jupiter']['house'] == 1:
+            interpretation += "• Jupiter in 1st House: Wisdom and spiritual growth\n"
+        
+        if kundali_data['planets']['Saturn']['house'] == 1:
+            interpretation += "• Saturn in 1st House: Discipline and life lessons\n"
+        
+        interpretation += f"""
+✨ NEXT STEPS:
+• Embrace your {sun_sign} leadership qualities
+• Nurture your {moon_sign} emotional intelligence  
+• Express your {ascendant} authentic personality
+• Trust your intuition and inner wisdom
 
-Note: For more detailed AI-powered interpretations, the Hugging Face model will provide insights when available.
+This interpretation is based on traditional Vedic and Western astrological principles.
 """
         
         return interpretation
