@@ -213,7 +213,7 @@ Format your response in a clear, structured way with relevant sections and bulle
             import google.generativeai as genai
             
             genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-1.5-pro')
             
             prompt = self.create_astrology_prompt(kundali_data, question)
             response = model.generate_content(prompt)
